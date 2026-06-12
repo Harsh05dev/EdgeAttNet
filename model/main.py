@@ -1,55 +1,66 @@
-import os
+#!/usr/bin/env python3
+"""Evaluate a trained EdgeAttNet checkpoint."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
 import torch
-from torch.utils.data import DataLoader
-from edgeattnet_model import   # Replace ResNet with your actual model class, e.g., UNet, CNN, etc.
-from dataset import CustomDataset  # Replace CustomDataset with your dataset class
-from evaluation import evaluate_model, visualize_prediction_by_filename, generate_all_boxplots_in_row  # Replace with your actual functions
+from data_loader import DEFAULT_COCO_JSON, DEFAULT_IMAGE_DIR, create_data_loaders
+from edgeattnet_model import UNetEdgeTransformer
+from evaluation import evaluate_model
+from visualize import visualize_prediction_by_filename
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Evaluate EdgeAttNet")
+    parser.add_argument("--coco-json", type=Path, default=Path(DEFAULT_COCO_JSON))
+    parser.add_argument("--image-dir", type=Path, default=Path(DEFAULT_IMAGE_DIR))
+    parser.add_argument("--model-path", type=Path, default=Path("../models/best_model.pth"))
+    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--image-size", type=int, default=512)
+    parser.add_argument("--visualize-id", type=str, default=None)
+    return parser.parse_args()
+
 
 def main():
-    # Check if we can use the GPU, otherwise fall back to CPU
+    args = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Set up parameters
-    batch_size = 8
-    test_data_path = './data/test/'  # Path to your test data
-    model_path = './models/best_model.pth'  # Path to the model we want to load
+    if not args.model_path.exists():
+        raise FileNotFoundError(
+            f"Checkpoint not found at {args.model_path}. Train first with: python train.py"
+        )
 
-    # Initialize the model
-    model = ResNet()  # Initialize the model (replace ResNet with your actual model)
-    model.to(device)
+    _, _, test_loader = create_data_loaders(
+        coco_json=str(args.coco_json),
+        image_dir=str(args.image_dir),
+        batch_size=args.batch_size,
+        image_size=(args.image_size, args.image_size),
+        train_years=[],
+        val_years=[],
+        test_years=list(range(2011, 2023)),
+    )
+    if test_loader is None:
+        raise RuntimeError("No test samples found for the requested year split.")
 
-    # Load the trained weights if they exist
-    if os.path.exists(model_path):
-        model.load_state_dict(torch.load(model_path))
-        print(f"Model loaded from {model_path}")
-    else:
-        print(f"Couldn’t find the model at {model_path}. Exiting.")
-        return
+    model = UNetEdgeTransformer().to(device)
+    model.load_state_dict(torch.load(args.model_path, map_location=device))
+    model.eval()
+    print(f"Loaded model from {args.model_path}")
 
-    # Prepare the test data
-    test_dataset = CustomDataset(root=test_data_path, mode="test")  # Load your dataset (replace CustomDataset with your actual dataset class)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-
-    # Run the evaluation
     print("Evaluating the model...")
     results = evaluate_model(model, test_loader, device)
-    print(f"Evaluation results: {results}")
+    print("Evaluation results:")
+    for key, value in results.items():
+        print(f"  {key}: {value:.4f}" if isinstance(value, float) else f"  {key}: {value}")
 
-    # Visualize a specific prediction by filename (just for example)
-    filename = "040401-20220714185352Th"  # Change to any filename from your dataset
-    print(f"Visualizing prediction for {filename}...")
-    visualize_prediction_by_filename(model, test_dataset, device, filename)
+    if args.visualize_id:
+        print(f"Visualizing prediction for {args.visualize_id}...")
+        visualize_prediction_by_filename(model, test_loader.dataset, device, args.visualize_id)
 
-    # If you want, you can generate some boxplots for the results
-    print("Generating boxplots...")
-    generate_all_boxplots_in_row(
-        model=model,
-        dataloader=test_loader,
-        device=device,
-        max_images=12,
-        save_name="boxplots_output.pdf"  # You can adjust the file name
-    )
 
 if __name__ == "__main__":
     main()
