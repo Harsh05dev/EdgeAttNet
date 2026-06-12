@@ -1,10 +1,15 @@
 # Required imports for plotting
-import os
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from matplotlib.patches import Polygon
+from utils import (
+    compute_pairwise_iou,
+    compute_miou_per_object,
+    extract_contour,
+    match_objects,
+)
 
 
 def draw_cinched_box(ax, data, position, box_color='black', median_color='#FF7F24',
@@ -175,26 +180,4 @@ def generate_all_boxplots_in_row(model, dataloader, device,
     plt.subplots_adjust(bottom=0.25)
 
     plt.savefig(save_name, bbox_inches='tight', format='pdf')
-    plt.show()
-
-
-# Example on how to use:
-# Define the target filenames the user wants to include
-target_filenames = [
-    "010101-20220523234912Lh", "010203-20220710085152Th",
-    "010401-20210726041650Uh", "010401-20220621185332Bh",
-    "010401-20220721185332Bh", "020401-20220122085210Th",
-    "040201-20210620163530Mh", "040201-20220124155050Bh",
-    "040401-20220618185332Bh", "040401-20220714185352Th",
-    "050101-20220622205632Bh", "050201-20210730044930Lh"
-]
-
-# Assuming 'model', 'dataloader', and 'device' are defined elsewhere in your code
-generate_all_boxplots_in_row(
-    model=model,
-    dataloader=test_loader,
-    device=device,
-    target_filenames=target_filenames,  # Pass the list as an argument
-    max_images=12,
-    save_name="boxplots_edgeattnet.pdf"
-)
+    plt.close(fig)
