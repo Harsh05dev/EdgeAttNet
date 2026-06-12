@@ -1,70 +1,112 @@
-import os
+import json
 import random
-import torch
-from torch.utils.data import Dataset, DataLoader, Subset
-from torchvision import transforms
-from PIL import Image
+from collections import defaultdict
+from pathlib import Path
 
-# Custom Transform Class for image and mask
+import torch
+from PIL import Image, ImageDraw
+from torch.utils.data import DataLoader, Dataset, Subset
+from torchvision import transforms
+
+
+DEFAULT_COCO_JSON = "/media/data/magfilo_dataset/magfilo_2024_v1.0.json"
+DEFAULT_IMAGE_DIR = "/media/data/magfilo_dataset/images"
+
+
 class ImageMaskTransform:
     def __init__(self, image_size=(512, 512)):
+        self.image_size = image_size
         self.image_transform = transforms.Compose([
             transforms.Resize(image_size),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5], std=[0.5])  # Normalize image to [-1, 1]
+            transforms.Normalize(mean=[0.5], std=[0.5]),
         ])
-        self.mask_transform = transforms.ToTensor()
 
     def __call__(self, image, mask):
         image = self.image_transform(image)
-        mask = self.mask_transform(mask)
+        mask = transforms.functional.resize(
+            mask,
+            self.image_size,
+            interpolation=transforms.InterpolationMode.NEAREST,
+        )
+        mask = transforms.ToTensor()(mask)
         return image, mask
 
-# Dataset Class for Filament Dataset
-class FilamentDataset(Dataset):
-    def __init__(self, image_dir, mask_dir, transform=None):
-        self.image_index = self.index_images_by_id(image_dir)
-        self.mask_dir = mask_dir
-        self.image_ids = sorted(self.image_index.keys())
+
+class CocoFilamentDataset(Dataset):
+    """Load MAGFILO COCO annotations with images from a flat image directory."""
+
+    def __init__(self, coco_json, image_dir, transform=None, image_ids=None):
+        self.image_dir = Path(image_dir)
         self.transform = transform
+        coco = json.loads(Path(coco_json).read_text())
+
+        self.images = list(coco.get("images", []))
+        if image_ids is not None:
+            allowed = set(image_ids)
+            self.images = [img for img in self.images if img["id"] in allowed]
+
+        self.anns_by_image = defaultdict(list)
+        for ann in coco.get("annotations", []):
+            if ann.get("iscrowd", 0):
+                continue
+            self.anns_by_image[ann["image_id"]].append(ann)
 
     def __len__(self):
-        return len(self.image_ids)
+        return len(self.images)
+
+    def _resolve_image_path(self, image_meta):
+        file_name = Path(image_meta["file_name"]).name
+        path = self.image_dir / file_name
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Image for id '{image_meta['id']}' not found at {path}"
+            )
+        return path
+
+    def _rasterize_mask(self, image_meta):
+        width = int(image_meta["width"])
+        height = int(image_meta["height"])
+        mask = Image.new("L", (width, height), 0)
+        draw = ImageDraw.Draw(mask)
+        for ann in self.anns_by_image.get(image_meta["id"], []):
+            segmentation = ann.get("segmentation", [])
+            if not isinstance(segmentation, list):
+                continue
+            for poly in segmentation:
+                if isinstance(poly, list) and len(poly) >= 6:
+                    points = [
+                        (float(poly[i]), float(poly[i + 1]))
+                        for i in range(0, len(poly), 2)
+                    ]
+                    draw.polygon(points, outline=1, fill=1)
+        return mask
 
     def __getitem__(self, idx):
-        image_id = self.image_ids[idx]
-        img_path = self.image_index[image_id]
-        mask_path = os.path.join(self.mask_dir, f"{image_id}.png")
-        image = Image.open(img_path).convert("L")
-        mask = Image.open(mask_path).convert("L")
-        
+        image_meta = self.images[idx]
+        image = Image.open(self._resolve_image_path(image_meta)).convert("L")
+        mask = self._rasterize_mask(image_meta)
+
         if self.transform:
             image, mask = self.transform(image, mask)
-        
-        mask = (mask > 0).float()  # Binarize mask
-        return image, mask, image_id
 
-    @staticmethod
-    def index_images_by_id(image_dir, extensions=(".jpg", ".jpeg", ".png", ".tif")):
-        image_index = {}
-        for root, _, files in os.walk(image_dir):
-            for file in files:
-                if file.lower().endswith(extensions):
-                    image_id = os.path.splitext(file)[0]
-                    image_index[image_id] = os.path.join(root, file)
-        return image_index
+        mask = (mask > 0).float()
+        return image, mask, image_meta["id"]
 
-# Helper function to split the dataset by year
+
 def extract_year_from_image_id(image_id):
     try:
-        return int(image_id.split('-')[1][:4])
-    except Exception as e:
-        raise ValueError(f"Failed to extract year from image ID '{image_id}': {e}")
+        if "-" in image_id:
+            return int(image_id.split("-")[1][:4])
+        return int(image_id[:4])
+    except Exception as exc:
+        raise ValueError(f"Failed to extract year from image ID '{image_id}': {exc}") from exc
 
-def split_dataset_by_year(dataset, train_years, val_years, test_years):
+
+def split_indices_by_year(dataset, train_years, val_years, test_years):
     train_indices, val_indices, test_indices = [], [], []
-    for idx, image_id in enumerate(dataset.image_ids):
-        year = extract_year_from_image_id(image_id)
+    for idx, image_meta in enumerate(dataset.images):
+        year = extract_year_from_image_id(image_meta["id"])
         if year in train_years:
             train_indices.append(idx)
         elif year in val_years:
@@ -73,37 +115,81 @@ def split_dataset_by_year(dataset, train_years, val_years, test_years):
             test_indices.append(idx)
     return train_indices, val_indices, test_indices
 
-# Create Dataloader for different splits (train, validation, test)
-def create_data_loaders(image_dir, mask_dir, train_years, val_years, test_years, batch_size=2, use_small_subset=False):
-    full_dataset = FilamentDataset(image_dir=image_dir, mask_dir=mask_dir, transform=None)
-    
-    # Split dataset into train, val, test
-    train_idx, val_idx, test_idx = split_dataset_by_year(full_dataset, train_years, val_years, test_years)
-    
-    # Optional: use a small subset for quick prototyping
+
+def create_data_loaders(
+    coco_json=DEFAULT_COCO_JSON,
+    image_dir=DEFAULT_IMAGE_DIR,
+    train_years=None,
+    val_years=None,
+    test_years=None,
+    batch_size=4,
+    image_size=(512, 512),
+    use_small_subset=False,
+    num_workers=4,
+):
+    if train_years is None:
+        train_years = list(range(2011, 2020))
+    if val_years is None:
+        val_years = [2020]
+    if test_years is None:
+        test_years = list(range(2021, 2023))
+
+    full_dataset = CocoFilamentDataset(coco_json=coco_json, image_dir=image_dir, transform=None)
+    train_idx, val_idx, test_idx = split_indices_by_year(
+        full_dataset, train_years, val_years, test_years
+    )
+
     if use_small_subset:
-        RANDOM_SEED = 42
-        random.seed(RANDOM_SEED)
-        train_idx = random.sample(train_idx, min(200, len(train_idx)))
-        val_idx = random.sample(val_idx, min(50, len(val_idx)))
-        test_idx = random.sample(test_idx, min(50, len(test_idx)))
+        random.seed(42)
+        train_idx = random.sample(train_idx, min(50, len(train_idx)))
+        val_idx = random.sample(val_idx, min(10, len(val_idx)))
+        test_idx = random.sample(test_idx, min(20, len(test_idx)))
 
-    # Define transforms
-    shared_transform = ImageMaskTransform(image_size=(512, 512))
+    shared_transform = ImageMaskTransform(image_size=image_size)
 
-    # Create datasets for train, val, and test splits
-    train_dataset = Subset(FilamentDataset(image_dir, mask_dir, transform=shared_transform), train_idx)
-    val_dataset = Subset(FilamentDataset(image_dir, mask_dir, transform=shared_transform), val_idx)
-    test_dataset = Subset(FilamentDataset(image_dir, mask_dir, transform=shared_transform), test_idx)
+    train_dataset = Subset(
+        CocoFilamentDataset(coco_json, image_dir, transform=shared_transform),
+        train_idx,
+    )
+    val_dataset = Subset(
+        CocoFilamentDataset(coco_json, image_dir, transform=shared_transform),
+        val_idx,
+    )
+    test_dataset = Subset(
+        CocoFilamentDataset(coco_json, image_dir, transform=shared_transform),
+        test_idx,
+    )
 
-    # Create DataLoader for each split
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=2)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=2)
+    train_loader = None
+    if len(train_dataset) > 0:
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=torch.cuda.is_available(),
+        )
+
+    val_loader = None
+    if len(val_dataset) > 0:
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=max(1, num_workers // 2),
+        )
+
+    test_loader = None
+    if len(test_dataset) > 0:
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=max(1, num_workers // 2),
+        )
 
     print(f"Total training samples: {len(train_dataset)}")
     print(f"Total validation samples: {len(val_dataset)}")
     print(f"Total test samples: {len(test_dataset)}")
 
     return train_loader, val_loader, test_loader
-
