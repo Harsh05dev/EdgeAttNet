@@ -21,6 +21,17 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--image-size", type=int, default=512)
     parser.add_argument("--visualize-id", type=str, default=None)
+    parser.add_argument(
+        "--save-viz",
+        type=Path,
+        default=None,
+        help="Save visualization PNG (default: ../models/visualizations/<visualize-id>.png)",
+    )
+    parser.add_argument(
+        "--skip-eval",
+        action="store_true",
+        help="Skip full-dataset evaluation when only visualizing",
+    )
     return parser.parse_args()
 
 
@@ -51,15 +62,25 @@ def main():
     model.eval()
     print(f"Loaded model from {args.model_path}")
 
-    print("Evaluating the model...")
-    results = evaluate_model(model, test_loader, device)
-    print("Evaluation results:")
-    for key, value in results.items():
-        print(f"  {key}: {value:.4f}" if isinstance(value, float) else f"  {key}: {value}")
+    if not args.skip_eval:
+        print("Evaluating the model...")
+        results = evaluate_model(model, test_loader, device)
+        print("Evaluation results:")
+        for key, value in results.items():
+            print(f"  {key}: {value:.4f}" if isinstance(value, float) else f"  {key}: {value}")
 
     if args.visualize_id:
+        save_path = args.save_viz
+        if save_path is None:
+            save_path = Path("../models/visualizations") / f"{args.visualize_id}.png"
         print(f"Visualizing prediction for {args.visualize_id}...")
-        visualize_prediction_by_filename(model, test_loader.dataset, device, args.visualize_id)
+        visualize_prediction_by_filename(
+            model,
+            test_loader.dataset,
+            device,
+            args.visualize_id,
+            save_path=save_path,
+        )
 
 
 if __name__ == "__main__":

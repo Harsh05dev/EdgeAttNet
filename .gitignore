@@ -205,3 +205,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Large artifacts / local data (project-specific)
+*.pth
+*.pt
+runs/**/*.png
+runs/**/visualizations/
+data/
+.venv/

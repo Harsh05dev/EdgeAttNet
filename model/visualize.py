@@ -1,19 +1,22 @@
 # Required imports for visualization
-import numpy as np
+from pathlib import Path
+
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from skimage.transform import resize
 
-# Function to visualize prediction by filename
-def visualize_prediction_by_filename(model, dataset, device, filename):
+
+def visualize_prediction_by_filename(model, dataset, device, filename, save_path=None):
     """
     Visualizes the prediction for a given image filename from the dataset.
-    
+
     Args:
-        model (torch.nn.Module): The trained model.
-        dataset (torch.utils.data.Dataset): The dataset containing images and masks.
-        device (torch.device): The device (CPU or GPU).
-        filename (str): The filename of the image to visualize (without extension).
+        model: Trained model.
+        dataset: Dataset containing images and masks.
+        device: CPU or GPU device.
+        filename: COCO image id to visualize (without extension).
+        save_path: Optional path to save the figure as PNG.
     """
     model.eval()
 
@@ -26,7 +29,7 @@ def visualize_prediction_by_filename(model, dataset, device, filename):
 
     if image is None:
         print(f"Filename '{filename}' not found in the dataset.")
-        return
+        return None
 
     image_tensor = image.unsqueeze(0).to(device)
 
@@ -37,12 +40,11 @@ def visualize_prediction_by_filename(model, dataset, device, filename):
     pred_mask = (pred_mask > 0.5).astype(np.uint8)
     gt_mask = gt_mask.squeeze().cpu().numpy().astype(np.uint8)
 
-    # Convert image tensor to numpy array
     img_np = image.squeeze().cpu().numpy()
     if img_np.ndim == 3:
         img_np_show = np.moveaxis(img_np, 0, -1)
     else:
-        img_np_show = img_np
+        img_np_show = np.clip(img_np * 0.5 + 0.5, 0.0, 1.0)
 
     H_img, W_img = img_np_show.shape[:2]
 
@@ -79,8 +81,15 @@ def visualize_prediction_by_filename(model, dataset, device, filename):
     axs[2].set_title("Image + Predicted Mask")
 
     plt.tight_layout()
-    plt.show()
 
-# Usage example (replace with actual model, dataset, and device):
-# filename = "040401-20220714185352Th"
-# visualize_prediction_by_filename(model, test_dataset, device, filename)
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Saved visualization to {save_path}")
+        return save_path
+
+    plt.show()
+    plt.close(fig)
+    return None
