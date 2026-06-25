@@ -52,24 +52,33 @@ def finalize_metrics(stats: dict, loss: float, n_batches: int) -> dict:
     }
 
 
-def run_epoch(model, loader, optimizer, device, training: bool) -> dict:
+def run_epoch(model, loader, optimizer, device, training: bool, amp: bool = False, scaler=None) -> dict:
     model.train(training)
     loss_sum = 0.0
     stats = {"tp": 0.0, "fp": 0.0, "fn": 0.0}
     context = torch.enable_grad() if training else torch.no_grad()
+    use_amp = amp and device.type == "cuda"
 
     with context:
         for images, masks, _ in tqdm(loader, desc="train" if training else "eval", leave=False):
             images = images.to(device, non_blocking=True)
             masks = masks.to(device, non_blocking=True)
-            logits, _ = model(images)
-            loss = F.binary_cross_entropy_with_logits(logits, masks) + dice_loss(logits, masks)
+            with torch.autocast(device_type="cuda", enabled=use_amp):
+                logits, _ = model(images)
+                loss = F.binary_cross_entropy_with_logits(logits, masks) + dice_loss(logits, masks)
 
             if training:
                 optimizer.zero_grad(set_to_none=True)
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
+                if use_amp and scaler is not None:
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    optimizer.step()
 
             loss_sum += float(loss.detach().item())
             batch_stats = segmentation_stats(logits.detach(), masks)
@@ -94,6 +103,12 @@ def parse_args():
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--small-subset", action="store_true")
+    parser.add_argument(
+        "--amp",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Mixed-precision training (on by default; use --no-amp to disable)",
+    )
     return parser.parse_args()
 
 
@@ -122,6 +137,7 @@ def main():
     model = UNetEdgeTransformer().to(device)
     print(f"Trainable parameters: {count_parameters(model):,}")
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    scaler = torch.amp.GradScaler("cuda", enabled=args.amp and device.type == "cuda")
 
     config = vars(args)
     config["device"] = str(device)
@@ -138,8 +154,8 @@ def main():
         writer.writeheader()
 
         for epoch in range(1, args.epochs + 1):
-            train_metrics = run_epoch(model, train_loader, optimizer, device, training=True)
-            val_metrics = run_epoch(model, val_loader, None, device, training=False)
+            train_metrics = run_epoch(model, train_loader, optimizer, device, training=True, amp=args.amp, scaler=scaler)
+            val_metrics = run_epoch(model, val_loader, None, device, training=False, amp=args.amp)
             row = {
                 "epoch": epoch,
                 "train_loss": train_metrics["loss"],
@@ -178,7 +194,7 @@ def main():
         if best_path.exists():
             model.load_state_dict(torch.load(best_path, map_location=device))
             print(f"Loaded best checkpoint for test eval: {best_path}")
-        test_metrics = run_epoch(model, test_loader, None, device, training=False)
+        test_metrics = run_epoch(model, test_loader, None, device, training=False, amp=args.amp)
         print(
             f"Test dice {test_metrics['dice']:.4f} | "
             f"test iou {test_metrics['iou']:.4f}"
