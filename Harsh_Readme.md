@@ -64,6 +64,7 @@ Shared split JSONs (identical in both repos): `splits/year_2011-2019_val2020_tes
 | image_size | 2048 |
 | epochs | 50 |
 | batch_size | 2 (drop to 1 if OOM — keep equal for both) |
+| EdgeAttNet batch_size | **1** at 2048 (attention OOM at 2 on 32GB; U-Net uses 2) |
 | lr / optimizer | 1e-4 / Adam (no scheduler) |
 | augmentation | none |
 | normalization | (x/255 − 0.5)/0.5 (both) |
