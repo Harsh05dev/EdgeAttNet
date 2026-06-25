@@ -11,6 +11,30 @@ from torchvision import transforms
 
 DEFAULT_COCO_JSON = "/media/data/magfilo_dataset/magfilo_2024_v1.0.json"
 DEFAULT_IMAGE_DIR = "/media/data/magfilo_dataset/images"
+DEFAULT_PROCESSED_IMAGE_DIR = "/media/project/harsh/EdgeAttNet/data/processed-H-alpha"
+
+
+def resolve_magfilo_image_path(image_meta: dict, image_dir: Path) -> Path | None:
+    """Resolve a MAGFILO image to a local file (flat raw JPEG or nested preprocessed layout)."""
+    image_dir = Path(image_dir)
+    image_id = image_meta.get("id", "")
+
+    if image_id and "-" in image_id:
+        ts = image_id.split("-", 1)[1]
+        if len(ts) >= 8 and ts[:8].isdigit():
+            y, m, d = ts[0:4], ts[4:6], ts[6:8]
+            for ext in (".jpg", ".jpeg"):
+                path = image_dir / y / m / d / f"{image_id}{ext}"
+                if path.is_file() and path.stat().st_size > 0:
+                    return path
+
+    file_name = image_meta.get("file_name")
+    if file_name:
+        path = image_dir / Path(file_name).name
+        if path.is_file() and path.stat().st_size > 0:
+            return path
+
+    return None
 
 
 class ImageMaskTransform:
@@ -56,11 +80,10 @@ class CocoFilamentDataset(Dataset):
         return len(self.images)
 
     def _resolve_image_path(self, image_meta):
-        file_name = Path(image_meta["file_name"]).name
-        path = self.image_dir / file_name
-        if not path.exists():
+        path = resolve_magfilo_image_path(image_meta, self.image_dir)
+        if path is None:
             raise FileNotFoundError(
-                f"Image for id '{image_meta['id']}' not found at {path}"
+                f"Image for id '{image_meta['id']}' not found under {self.image_dir}"
             )
         return path
 

@@ -1,0 +1,25 @@
+{
+  "source_split": "splits/year_2011-2019_val2020_test2021-2022",
+  "image_dir": "/media/qinli/DATA1/harsh/EdgeAttNet/data/processed-H-alpha",
+  "splits": {
+    "train": {
+      "original_images": 1412,
+      "kept_images": 1322,
+      "missing_images": 90,
+      "annotations": 9762
+    },
+    "val": {
+      "original_images": 62,
+      "kept_images": 18,
+      "missing_images": 44,
+      "annotations": 36
+    },
+    "test": {
+      "original_images": 119,
+      "kept_images": 99,
+      "missing_images": 20,
+      "annotations": 446
+    }
+  },
+  "total_missing": 154
+}
