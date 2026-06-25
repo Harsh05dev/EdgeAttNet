@@ -84,7 +84,7 @@ CUDA_VISIBLE_DEVICES=1 bash model/run_phase1_fair_raw.sh
 
 Before starting, clear stale GPU processes: `nvidia-smi` then `kill <pid>` if needed.
 
-### Phase 1 results (fill after running)
+### Phase 1 results
 
 | Model | Test Dice | Test IoU | Best val Dice | Best epoch |
 |-------|----------:|---------:|--------------:|-----------:|
