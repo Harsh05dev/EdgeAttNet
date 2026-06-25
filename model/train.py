@@ -83,7 +83,10 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train EdgeAttNet")
     parser.add_argument("--coco-json", type=Path, default=Path(DEFAULT_COCO_JSON))
     parser.add_argument("--image-dir", type=Path, default=Path(DEFAULT_IMAGE_DIR))
-    parser.add_argument("--out-dir", type=Path, default=Path("../models"))
+    parser.add_argument("--train-json", type=Path, default=None)
+    parser.add_argument("--val-json", type=Path, default=None)
+    parser.add_argument("--test-json", type=Path, default=None)
+    parser.add_argument("--out-dir", type=Path, default=Path("../runs/phase1_fair_raw_year2048_ep50"))
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--lr", type=float, default=1e-4)
@@ -105,6 +108,9 @@ def main():
     train_loader, val_loader, test_loader = create_data_loaders(
         coco_json=str(args.coco_json),
         image_dir=str(args.image_dir),
+        train_json=str(args.train_json) if args.train_json else None,
+        val_json=str(args.val_json) if args.val_json else None,
+        test_json=str(args.test_json) if args.test_json else None,
         batch_size=args.batch_size,
         image_size=(args.image_size, args.image_size),
         use_small_subset=args.small_subset,
@@ -168,6 +174,10 @@ def main():
                 print(f"  Saved new best model (val dice={best_val_dice:.4f})")
 
     if test_loader is not None:
+        best_path = args.out_dir / "best_model.pth"
+        if best_path.exists():
+            model.load_state_dict(torch.load(best_path, map_location=device))
+            print(f"Loaded best checkpoint for test eval: {best_path}")
         test_metrics = run_epoch(model, test_loader, None, device, training=False)
         print(
             f"Test dice {test_metrics['dice']:.4f} | "

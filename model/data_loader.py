@@ -122,46 +122,63 @@ def create_data_loaders(
     train_years=None,
     val_years=None,
     test_years=None,
+    train_json=None,
+    val_json=None,
+    test_json=None,
     batch_size=4,
     image_size=(512, 512),
     use_small_subset=False,
     num_workers=4,
 ):
-    if train_years is None:
-        train_years = list(range(2011, 2020))
-    if val_years is None:
-        val_years = [2020]
-    if test_years is None:
-        test_years = list(range(2021, 2023))
-
-    full_dataset = CocoFilamentDataset(coco_json=coco_json, image_dir=image_dir, transform=None)
-    train_idx, val_idx, test_idx = split_indices_by_year(
-        full_dataset, train_years, val_years, test_years
-    )
-
-    if use_small_subset:
-        random.seed(42)
-        train_idx = random.sample(train_idx, min(50, len(train_idx)))
-        val_idx = random.sample(val_idx, min(10, len(val_idx)))
-        test_idx = random.sample(test_idx, min(20, len(test_idx)))
-
     shared_transform = ImageMaskTransform(image_size=image_size)
 
-    train_dataset = Subset(
-        CocoFilamentDataset(coco_json, image_dir, transform=shared_transform),
-        train_idx,
-    )
-    val_dataset = Subset(
-        CocoFilamentDataset(coco_json, image_dir, transform=shared_transform),
-        val_idx,
-    )
-    test_dataset = Subset(
-        CocoFilamentDataset(coco_json, image_dir, transform=shared_transform),
-        test_idx,
-    )
+    # Preferred path: explicit split JSON files (each is a standalone COCO file
+    # holding only that split's images + annotations). This guarantees identical
+    # train/val/test membership across models.
+    if train_json is not None or val_json is not None or test_json is not None:
+        def _from_json(path):
+            if path is None:
+                return None
+            ds = CocoFilamentDataset(path, image_dir, transform=shared_transform)
+            return ds if len(ds) > 0 else None
+
+        train_dataset = _from_json(train_json)
+        val_dataset = _from_json(val_json)
+        test_dataset = _from_json(test_json)
+    else:
+        if train_years is None:
+            train_years = list(range(2011, 2020))
+        if val_years is None:
+            val_years = [2020]
+        if test_years is None:
+            test_years = list(range(2021, 2023))
+
+        full_dataset = CocoFilamentDataset(coco_json=coco_json, image_dir=image_dir, transform=None)
+        train_idx, val_idx, test_idx = split_indices_by_year(
+            full_dataset, train_years, val_years, test_years
+        )
+
+        if use_small_subset:
+            random.seed(42)
+            train_idx = random.sample(train_idx, min(50, len(train_idx)))
+            val_idx = random.sample(val_idx, min(10, len(val_idx)))
+            test_idx = random.sample(test_idx, min(20, len(test_idx)))
+
+        train_dataset = Subset(
+            CocoFilamentDataset(coco_json, image_dir, transform=shared_transform),
+            train_idx,
+        )
+        val_dataset = Subset(
+            CocoFilamentDataset(coco_json, image_dir, transform=shared_transform),
+            val_idx,
+        )
+        test_dataset = Subset(
+            CocoFilamentDataset(coco_json, image_dir, transform=shared_transform),
+            test_idx,
+        )
 
     train_loader = None
-    if len(train_dataset) > 0:
+    if train_dataset is not None and len(train_dataset) > 0:
         train_loader = DataLoader(
             train_dataset,
             batch_size=batch_size,
@@ -171,7 +188,7 @@ def create_data_loaders(
         )
 
     val_loader = None
-    if len(val_dataset) > 0:
+    if val_dataset is not None and len(val_dataset) > 0:
         val_loader = DataLoader(
             val_dataset,
             batch_size=batch_size,
@@ -180,7 +197,7 @@ def create_data_loaders(
         )
 
     test_loader = None
-    if len(test_dataset) > 0:
+    if test_dataset is not None and len(test_dataset) > 0:
         test_loader = DataLoader(
             test_dataset,
             batch_size=batch_size,
@@ -188,8 +205,8 @@ def create_data_loaders(
             num_workers=max(1, num_workers // 2),
         )
 
-    print(f"Total training samples: {len(train_dataset)}")
-    print(f"Total validation samples: {len(val_dataset)}")
-    print(f"Total test samples: {len(test_dataset)}")
+    print(f"Total training samples: {0 if train_dataset is None else len(train_dataset)}")
+    print(f"Total validation samples: {0 if val_dataset is None else len(val_dataset)}")
+    print(f"Total test samples: {0 if test_dataset is None else len(test_dataset)}")
 
     return train_loader, val_loader, test_loader
