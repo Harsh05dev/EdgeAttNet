@@ -95,7 +95,7 @@ def parse_args():
     parser.add_argument("--train-json", type=Path, default=None)
     parser.add_argument("--val-json", type=Path, default=None)
     parser.add_argument("--test-json", type=Path, default=None)
-    parser.add_argument("--out-dir", type=Path, default=Path("../runs/phase1_fair_raw_year2048_ep50"))
+    parser.add_argument("--out-dir", type=Path, default=Path("../runs/phase1_fair_raw_year512_ep50"))
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--lr", type=float, default=1e-4)

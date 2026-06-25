@@ -49,7 +49,7 @@ Runs are organized under `runs/` in both repos so old records are never lost.
 | Phase | Folder | Images | Split | Res | Epochs |
 |-------|--------|--------|-------|-----|--------|
 | 0 legacy | `runs/phase0_legacy_raw_year512_ep50` (EdgeAttNet) / `runs/phase0_legacy_raw_random2048_ep20` (U-Net) | raw | different (year vs random) | 512 vs 2048 | 50 vs 20 |
-| 1 fair raw | `runs/phase1_fair_raw_year2048_ep50` (both) | raw JPEGs | year split (shared JSONs) | 2048 | 50 |
+| 1 fair raw | `runs/phase1_fair_raw_year512_ep50` (both) | raw JPEGs | year split (shared JSONs) | **512** | 50 |
 | 2 fair prep | `runs/phase2_fair_prep_year2048_ep50` (both) | preprocessed | year split | 2048 | 50 |
 
 Shared split JSONs (identical in both repos): `splits/year_2011-2019_val2020_test2021-2022/`
@@ -61,10 +61,9 @@ Shared split JSONs (identical in both repos): `splits/year_2011-2019_val2020_tes
 |---------|-------|
 | Images | raw GONG JPEGs `/media/data/magfilo_dataset/images/` |
 | Split | `splits/year_2011-2019_val2020_test2021-2022/` |
-| image_size | 2048 |
+| image_size | **512** (2048 partial runs archived under `phase1_fair_raw_year2048_ep50/`) |
 | epochs | 50 |
-| batch_size | 2 (drop to 1 if OOM — keep equal for both) |
-| EdgeAttNet batch_size | **1** at 2048 (attention OOM at 2 on 32GB; U-Net uses 2) |
+| batch_size | 4 (both) |
 | lr / optimizer | 1e-4 / Adam (no scheduler) |
 | augmentation | none |
 | normalization | (x/255 − 0.5)/0.5 (both) |
@@ -74,21 +73,23 @@ Shared split JSONs (identical in both repos): `splits/year_2011-2019_val2020_tes
 ### Run Phase 1 (manual)
 
 ```bash
-# EdgeAttNet
-cd /media/project/harsh/EdgeAttNet
-bash model/run_phase1_fair_raw.sh
-
-# U-Net
+# Terminal 1 — U-Net on GPU 0
 cd /media/project/harsh/filament
-bash run_phase1_fair_raw.sh
+CUDA_VISIBLE_DEVICES=0 bash run_phase1_fair_raw.sh
+
+# Terminal 2 — EdgeAttNet on GPU 1
+cd /media/project/harsh/EdgeAttNet
+CUDA_VISIBLE_DEVICES=1 bash model/run_phase1_fair_raw.sh
 ```
+
+Before starting, clear stale GPU processes: `nvidia-smi` then `kill <pid>` if needed.
 
 ### Phase 1 results (fill after running)
 
 | Model | Test Dice | Test IoU | Best val Dice | Best epoch |
 |-------|----------:|---------:|--------------:|-----------:|
-| U-Net | TBD | TBD | TBD | TBD |
-| EdgeAttNet | TBD | TBD | TBD | TBD |
+| U-Net | 0.601 | 0.430 | 0.553 | 17 |
+| EdgeAttNet | **0.626** | **0.456** | 0.500 | 47 |
 
 ---
 
