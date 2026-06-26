@@ -105,21 +105,24 @@ Before starting, clear stale GPU processes: `nvidia-smi` then `kill <pid>` if ne
 | U-Net | 0.599 | 0.428 | 0.628 | 15 |
 | EdgeAttNet | **0.621** | **0.450** | **0.633** | 35 |
 
-### Phase 2b — preprocessed @ 2048 (ready, not run)
+### Phase 2b — preprocessed @ 2048 (complete)
 
 Paper-native resolution. Same prep split; U-Net batch 2, EdgeAttNet batch 1.
 
+| Model | Test Dice | Test IoU | Best val Dice | Best epoch |
+|-------|----------:|---------:|--------------:|-----------:|
+| U-Net | **0.615** | **0.444** | 0.572 | 26 |
+| EdgeAttNet | 0.040 | 0.020 | 0.530 | 5 |
+
+EdgeAttNet did not train stably at 2048 (best ckpt at epoch 5; test eval needs batch_size 1). See `runs/phase2_fair_prep_year2048_ep50/README.md`.
+
 ```bash
-# Terminal 1 — U-Net on GPU 0 (~1 h/epoch, ~50 h total)
 cd /media/project/harsh/filament
 CUDA_VISIBLE_DEVICES=0 bash run_phase2_fair_prep_2048.sh
 
-# Terminal 2 — EdgeAttNet on GPU 1 (~18 h/epoch, ~37 days total)
 cd /media/project/harsh/EdgeAttNet
 CUDA_VISIBLE_DEVICES=1 bash model/run_phase2_fair_prep_2048.sh
 ```
-
-Before starting: `nvidia-smi` and kill stale GPU processes if needed.
 
 Regenerate prep-filtered splits: `python3 filter_splits_for_processed.py`
 
