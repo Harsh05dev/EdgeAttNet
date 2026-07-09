@@ -36,4 +36,16 @@ EdgeAttNet reaches higher val and test Dice/IoU with the expanded 2018–2020 va
 | `metrics.csv` | Per-epoch train + val metrics |
 | `test_metrics.json` | Final held-out test evaluation |
 | `best_model.pth` / `last_model.pth` | Checkpoints (gitignored) |
-| `comparison.png` | Slide viz: Input \| GT \| prediction (gitignored) |
+| `comparison.png` | Slide viz: Input \| GT \| prediction for `040401-20220714185352Th` (same test image as Phase 1) |
+
+Regenerate slide viz:
+
+```bash
+cd /media/project/harsh/EdgeAttNet/model
+../.venv/bin/python main.py \
+  --model-path ../runs/phase3_fair_raw_year512_ep50/best_model.pth \
+  --image-size 512 \
+  --visualize-id 040401-20220714185352Th \
+  --skip-eval \
+  --save-viz ../runs/phase3_fair_raw_year512_ep50/comparison.png
+```
