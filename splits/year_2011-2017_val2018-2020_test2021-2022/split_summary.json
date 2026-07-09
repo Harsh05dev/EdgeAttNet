@@ -1,0 +1,28 @@
+{
+  "source": "/media/data/magfilo_dataset/magfilo_2024_v1.0.json",
+  "train_years": [
+    2011,
+    2012,
+    2013,
+    2014,
+    2015,
+    2016,
+    2017
+  ],
+  "val_years": [
+    2018,
+    2019,
+    2020
+  ],
+  "test_years": [
+    2021,
+    2022
+  ],
+  "skipped_images": 0,
+  "train_images": 1281,
+  "train_annotations": 9630,
+  "val_images": 193,
+  "val_annotations": 168,
+  "test_images": 119,
+  "test_annotations": 446
+}
